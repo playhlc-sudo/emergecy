@@ -36,11 +36,44 @@
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
         .toast-icon { font-size: 1.3rem; }
+        .settings-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; justify-content: center; align-items: center; }
+        .settings-modal.active { display: flex; }
+        .settings-content { background: white; padding: 30px; border-radius: 15px; max-width: 500px; width: 90%; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
+        .settings-btn { position: absolute; top: 10px; right: 10px; background: #6c757d; border: none; color: white; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; cursor: pointer; }
+        .settings-btn:hover { background: #5a6268; }
     </style>
 </head>
 <body>
 <div id="toastContainer" class="toast-container"></div>
-<div class="app-card shadow">
+
+<!-- 설정 모달 -->
+<div id="settingsModal" class="settings-modal">
+    <div class="settings-content">
+        <h5 class="fw-bold mb-3">⚙️ API URL 설정</h5>
+        <p class="text-muted" style="font-size: 0.9rem;">Google Apps Script 웹 앱 URL을 입력하세요.</p>
+
+        <div class="mb-3">
+            <label class="form-label fw-bold">API URL</label>
+            <input type="text" id="apiUrlInput" class="form-control" placeholder="https://script.google.com/macros/s/..." />
+            <div class="form-text">예: https://script.google.com/macros/s/AKfycbxxx.../exec</div>
+        </div>
+
+        <div class="alert alert-info" style="font-size: 0.85rem;">
+            <strong>💡 API URL 받는 방법:</strong><br>
+            1. Google Sheets → 확장 프로그램 → Apps Script<br>
+            2. code_api.gs 코드 붙여넣기<br>
+            3. 배포 → 새 배포 → 웹 앱<br>
+            4. 액세스 권한: <strong>모든 사용자</strong><br>
+            5. 웹 앱 URL 복사
+        </div>
+
+        <button class="btn btn-primary w-100" onclick="saveApiUrl()">저장</button>
+        <button class="btn btn-secondary w-100 mt-2" onclick="closeSettings()" id="closeSettingsBtn" style="display: none;">닫기</button>
+    </div>
+</div>
+
+<div class="app-card shadow" style="position: relative;">
+    <button class="settings-btn" onclick="openSettings()">⚙️ 설정</button>
     <div id="saveStatus" class="save-status">● 실시간 기록 중</div>
     <h4 class="text-center fw-bold text-danger mb-4">🚨 응급환자 기록지</h4>
 
@@ -222,9 +255,47 @@
 </div>
 
 <script>
-    // ============= 설정: Google Apps Script API URL =============
-    const API_URL = 'YOUR_GOOGLE_APPS_SCRIPT_API_URL_HERE';
-    // ===========================================================
+    // ============= API URL 관리 =============
+    function getApiUrl() {
+        return localStorage.getItem('emergencyAppApiUrl') || '';
+    }
+
+    function saveApiUrl() {
+        const url = document.getElementById('apiUrlInput').value.trim();
+        if(!url) {
+            showToast("API URL을 입력하세요.", "error");
+            return;
+        }
+        if(!url.startsWith('https://script.google.com/')) {
+            showToast("올바른 Google Apps Script URL을 입력하세요.", "error");
+            return;
+        }
+        localStorage.setItem('emergencyAppApiUrl', url);
+        showToast("API URL이 저장되었습니다!", "success");
+        closeSettings();
+    }
+
+    function openSettings() {
+        document.getElementById('apiUrlInput').value = getApiUrl();
+        document.getElementById('settingsModal').classList.add('active');
+        document.getElementById('closeSettingsBtn').style.display = getApiUrl() ? 'block' : 'none';
+    }
+
+    function closeSettings() {
+        if(!getApiUrl()) {
+            showToast("API URL을 먼저 설정하세요.", "error");
+            return;
+        }
+        document.getElementById('settingsModal').classList.remove('active');
+    }
+
+    // 페이지 로드 시 API URL 확인
+    window.addEventListener('DOMContentLoaded', () => {
+        if(!getApiUrl()) {
+            openSettings();
+        }
+    });
+    // ========================================
 
     let curAVPU = "A"; let curGCS = 15; let curSeverity = "경도"; let timeline = [];
     const recognition = (window.SpeechRecognition || window.webkitSpeechRecognition) ? new (window.SpeechRecognition || window.webkitSpeechRecognition)() : null;
@@ -353,6 +424,14 @@
     async function finalSave() {
         console.log('[저장 시작]');
 
+        // API URL 확인
+        const apiUrl = getApiUrl();
+        if(!apiUrl) {
+            showToast("먼저 API URL을 설정하세요 (⚙️ 설정 버튼)", "error");
+            openSettings();
+            return;
+        }
+
         const btn = document.getElementById('finalBtn');
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 전송 중...';
@@ -389,7 +468,7 @@
         console.log('[저장 데이터]', data);
 
         try {
-            const response = await fetch(API_URL, {
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 mode: 'no-cors',
                 headers: { 'Content-Type': 'application/json' },
