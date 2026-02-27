@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>응급환자 기록지</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f4f7f9; font-family: 'Noto Sans KR', sans-serif; padding: 15px; padding-bottom: 50px; }
+        .app-card { max-width: 700px; margin: auto; background: white; padding: 25px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .step-view { display: none; } .step-view.active { display: block; }
+        .btn-avpu { text-align: left; padding: 12px; margin-bottom: 8px; border: 2px solid #eee; background: white; width: 100%; border-radius: 10px; }
+        .btn-avpu.active { border-color: #0d6efd; background-color: #e7f5ff; }
+        .gcs-table { font-size: 0.82rem; }
+        #timelineBox { min-height: 150px; max-height: 250px; overflow-y: auto; background: #fff; border: 1px solid #ced4da; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
+        .timeline-item { border-left: 4px solid #0d6efd; padding-left: 10px; margin-bottom: 8px; font-size: 0.85rem; }
+        .mic-btn { width: 50px; height: 50px; border-radius: 50%; border: none; background: #dc3545; color: white; font-size: 20px; }
+        .mic-btn.recording { animation: pulse 1.2s infinite; background: #ff0000; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,0,0,0.7); } 70% { box-shadow: 0 0 0 10px rgba(255,0,0,0); } 100% { box-shadow: 0 0 0 0 rgba(255,0,0,0); } }
+        .save-status { font-size: 0.75rem; color: #28a745; text-align: right; margin-bottom: 10px; font-weight: bold; }
+        .section-title { font-size: 0.85rem; font-weight: bold; color: #444; border-bottom: 1px solid #eee; padding-bottom: 3px; margin-top: 12px; margin-bottom: 8px; }
+        .emergency-alert { background-color: #fff0f0; border: 2px solid #dc3545; color: #dc3545; padding: 12px; border-radius: 10px; text-align: center; font-weight: bold; display: none; margin-bottom: 15px; animation: blink 1.2s infinite; }
+        .alert-reason { font-size: 0.85rem; font-weight: normal; color: #555; display: block; margin-top: 5px; }
+        @keyframes blink { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(0.99); } 100% { opacity: 1; transform: scale(1); } }
+        .action-box { background-color: #f8f9ff; border-left: 5px solid #0d6efd; padding: 15px; border-radius: 8px; margin-top: 20px; }
+        .response-guide { background-color: #fff5f5; border: 2px solid #ffcfcf; padding: 15px; border-radius: 12px; margin-top: 15px; }
+        .guide-title { font-weight: bold; color: #dc3545; margin-bottom: 12px; display: flex; align-items: center; font-size: 1rem; }
+        .guide-list { list-style: none; padding-left: 0; margin-bottom: 0; font-size: 0.9rem; }
+        .guide-list li { margin-bottom: 8px; padding-left: 15px; position: relative; line-height: 1.4; }
+        .guide-list li::before { content: "•"; position: absolute; left: 0; color: #dc3545; font-weight: bold; }
+        .toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 9999; min-width: 300px; max-width: 500px; }
+        .toast-message { padding: 16px 20px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-size: 0.95rem; font-weight: 500; display: flex; align-items: center; gap: 10px; margin-bottom: 10px; animation: slideUp 0.3s ease-out; }
+        .toast-message.success { background-color: #28a745; color: white; }
+        .toast-message.error { background-color: #dc3545; color: white; }
+        .toast-message.info { background-color: #17a2b8; color: white; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+        .toast-icon { font-size: 1.3rem; }
+    </style>
+</head>
+<body>
+<div id="toastContainer" class="toast-container"></div>
+<div class="app-card shadow">
+    <div id="saveStatus" class="save-status">● 실시간 기록 중</div>
+    <h4 class="text-center fw-bold text-danger mb-4">🚨 응급환자 기록지</h4>
+
+    <div id="s1" class="step-view active">
+        <h6 class="fw-bold mb-3">1. 의식 상태 (AVPU)</h6>
+        <div class="mb-4">
+            <button class="btn btn-avpu active" id="avpu_A" onclick="setAVPU('A')"><b>정상(Alert)</b>: 의식이 명료함</button>
+            <button class="btn btn-avpu" id="avpu_V" onclick="setAVPU('V')"><b>언어반응(Verbal)</b>: 소리에 반응함</button>
+            <button class="btn btn-avpu" id="avpu_P" onclick="setAVPU('P')"><b>통증반응(Painful)</b>: 통증에 반응함</button>
+            <button class="btn btn-avpu" id="avpu_U" onclick="setAVPU('U')"><b>무반응(Unresponsive)</b>: 전혀 반응 없음</button>
+        </div>
+
+        <h6 class="fw-bold mb-2">2. GCS 사정</h6>
+        <div class="table-responsive bg-light p-2 rounded mb-3">
+            <table class="table table-sm gcs-table align-middle">
+                <tbody>
+                    <tr><th class="bg-secondary text-white small" colspan="2">눈뜨기 반응</th></tr>
+                    <tr><td>자발적으로 눈을 뜬다</td><td><input type="radio" name="gE" value="4" onclick="calcGCS()" checked> 4</td></tr>
+                    <tr><td>지시에 따라 눈을 뜬다</td><td><input type="radio" name="gE" value="3" onclick="calcGCS()"> 3</td></tr>
+                    <tr><td>통증 자극에 눈을 뜬다</td><td><input type="radio" name="gE" value="2" onclick="calcGCS()"> 2</td></tr>
+                    <tr><td>전혀 눈을 뜨지 않는다</td><td><input type="radio" name="gE" value="1" onclick="calcGCS()"> 1</td></tr>
+                    <tr><th class="bg-secondary text-white small" colspan="2">운동 반응</th></tr>
+                    <tr><td>지시대로 움직인다</td><td><input type="radio" name="gM" value="6" onclick="calcGCS()" checked> 6</td></tr>
+                    <tr><td>통증 부위를 짚어낸다</td><td><input type="radio" name="gM" value="5" onclick="calcGCS()"> 5</td></tr>
+                    <tr><td>통증 시 회피 반응</td><td><input type="radio" name="gM" value="4" onclick="calcGCS()"> 4</td></tr>
+                    <tr><td>이상 굴곡 반응</td><td><input type="radio" name="gM" value="3" onclick="calcGCS()"> 3</td></tr>
+                    <tr><td>이상 신전 반응</td><td><input type="radio" name="gM" value="2" onclick="calcGCS()"> 2</td></tr>
+                    <tr><td>반응 없음</td><td><input type="radio" name="gM" value="1" onclick="calcGCS()"> 1</td></tr>
+                    <tr><th class="bg-secondary text-white small" colspan="2">구두 반응</th></tr>
+                    <tr><td>지남력이 확실함</td><td><input type="radio" name="gV" value="5" onclick="calcGCS()" checked> 5</td></tr>
+                    <tr><td>혼돈된 대화</td><td><input type="radio" name="gV" value="4" onclick="calcGCS()"> 4</td></tr>
+                    <tr><td>부적절한 단어</td><td><input type="radio" name="gV" value="3" onclick="calcGCS()"> 3</td></tr>
+                    <tr><td>알아들을 수 없는 소리</td><td><input type="radio" name="gV" value="2" onclick="calcGCS()"> 2</td></tr>
+                    <tr><td>반응 없음</td><td><input type="radio" name="gV" value="1" onclick="calcGCS()"> 1</td></tr>
+                </tbody>
+            </table>
+            <div class="text-center fw-bold p-2 text-primary border-top" id="gcsDisp">총점: 15점 (경도)</div>
+        </div>
+
+        <h6 class="fw-bold mb-2">3. V/S (활력징후)</h6>
+        <div class="row g-2 mb-4">
+            <div class="col-3"><input type="number" id="vsSBP" class="form-control" placeholder="수축기" oninput="checkEmergency()"></div>
+            <div class="col-3"><input type="number" id="vsDBP" class="form-control" placeholder="이완기"></div>
+            <div class="col-3"><input type="number" id="vsPR" class="form-control" placeholder="맥박" oninput="checkEmergency()"></div>
+            <div class="col-3"><input type="number" id="vsRR" class="form-control" placeholder="호흡" oninput="checkEmergency()"></div>
+            <div class="col-4"><input type="text" id="vsBT" class="form-control" placeholder="체온"></div>
+            <div class="col-4"><input type="number" id="vsSpO2" class="form-control" placeholder="SpO2" oninput="checkEmergency()"></div>
+            <div class="col-4"><input type="number" id="vsBST" class="form-control" placeholder="혈당" oninput="checkEmergency()"></div>
+        </div>
+
+        <div id="emergencyNotice" class="emergency-alert">
+            🚨 즉시 119 신고 및 관리자 보고! 🚨
+            <span id="alertReasonText" class="alert-reason"></span>
+        </div>
+
+        <button class="btn btn-danger w-100 py-3 fw-bold shadow" onclick="move(2)">다음: 손상 사정 및 대응</button>
+    </div>
+
+    <div id="s2" class="step-view">
+        <h6 class="fw-bold mb-2">4. 통증, 출혈 및 손상 평가</h6>
+        <div class="bg-light p-3 rounded mb-3">
+            <div class="section-title">⚡ 통증 사정 (PQRST)</div>
+
+            <div class="row g-2 mb-3">
+                <div class="col-12"><input type="text" id="p_provoke" class="form-control form-control-sm" placeholder="P(유발요인): 어떨 때 통증이 시작/완화되나요?"></div>
+                <div class="col-6"><input type="text" id="q_quality" class="form-control form-control-sm" placeholder="Q(양상): 쑤심, 타는듯함 등"></div>
+                <div class="col-6"><input type="text" id="r_region" class="form-control form-control-sm" placeholder="R(부위): 정확한 부위와 방사통"></div>
+                <div class="col-6">
+                    <select id="s_severity" class="form-select form-select-sm">
+                        <option value="">S(정도): 통증점수(0-10)</option>
+                        <option value="0-통증없음">0점 (통증 없음)</option>
+                        <option value="1-3-경미">1-3점 (경미한 통증)</option>
+                        <option value="4-6-중등도">4-6점 (심한 통증)</option>
+                        <option value="7-10-극심">7-10점 (극심한 통증)</option>
+                    </select>
+                </div>
+                <div class="col-6"><input type="text" id="t_time" class="form-control form-control-sm" placeholder="T(시간): 시작 시점/지속시간"></div>
+            </div>
+
+            <div class="section-title">🩸 출혈 (Bleeding)</div>
+            <div class="row g-2 mb-3">
+                <div class="col-6"><input type="text" id="bldLoc" class="form-control form-control-sm" placeholder="부위"></div>
+                <div class="col-6">
+                    <select id="bldType" class="form-select form-select-sm">
+                        <option value="">양상 선택</option>
+                        <option value="동맥(Pumping)">동맥(Pumping)</option>
+                        <option value="정맥/모세혈관">정맥/모세혈관</option>
+                    </select>
+                </div>
+                <div class="col-6"><input type="text" id="bldDeg" class="form-control form-control-sm" placeholder="정도"></div>
+                <div class="col-6"><input type="text" id="bldAmt" class="form-control form-control-sm" placeholder="양"></div>
+            </div>
+
+            <div class="section-title">🦴 손상 평가 (Injury)</div>
+            <div class="row g-2 mb-3">
+                <div class="col-6"><select id="injOpen" class="form-select form-select-sm"><option value="폐쇄성">폐쇄성</option><option value="개방성">개방성</option></select></div>
+                <div class="col-6"><select id="injColor" class="form-select form-select-sm"><option value="말단부 변색 무">말단부 변색 무</option><option value="말단부 변색 유">말단부 변색 유</option></select></div>
+                <div class="col-6"><select id="injJoint" class="form-select form-select-sm"><option value="관절 움직임 가능">관절 움직임 가능</option><option value="관절 움직임 불가능">관절 움직임 불가능</option></select></div>
+                <div class="col-6"><select id="injWalk" class="form-select form-select-sm"><option value="보행 가능">보행 가능</option><option value="보행 불가능">보행 불가능</option></select></div>
+            </div>
+        </div>
+
+        <div id="timelineBox"></div>
+        <div class="input-group mb-2">
+            <input type="text" id="manualInput" class="form-control" placeholder="처치 내용 입력">
+            <button class="btn btn-primary" onclick="addManual()">추가</button>
+        </div>
+        <div class="text-center mb-3">
+            <button id="micBtn" class="mic-btn shadow-sm" onclick="toggleVoice()">🎙️</button>
+            <div id="micStatus" class="small text-danger mt-1"></div>
+        </div>
+
+        <div class="action-box shadow-sm">
+            <div class="fw-bold text-primary mb-2 small">🚑 응급조치 처치 (체크 시 타임라인 자동 기록)</div>
+            <div class="d-flex flex-wrap gap-3">
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="chkCPR" onchange="autoRecord(this, 'CPR 실시')"><label class="form-check-label small" for="chkCPR">CPR</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="chkAED" onchange="autoRecord(this, '자동제세동기 사용')"><label class="form-check-label small" for="chkAED">자동제세동기</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="chkDrug" onchange="autoRecord(this, '약물 투여')"><label class="form-check-label small" for="chkDrug">약물 투여</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="chkSplint" onchange="autoRecord(this, '지혈 및 Splint 처치')"><label class="form-check-label small" for="chkSplint">지혈/Splint</label></div>
+            </div>
+        </div>
+
+        <div class="response-guide shadow-sm">
+            <div class="guide-title">📋 응급처치 중 현장대응 핵심 요령</div>
+            <ul class="guide-list">
+                <li><strong>신원확인조:</strong> 환자 신원 및 담임교사 확인 ➔ 보호자 연락</li>
+                <li><strong>기록조:</strong> 실시간 처치 내용 기록 (텍스트, 녹화, 녹음 포함)</li>
+                <li><strong>통제조(사람담당):</strong> 불필요한 학생 교실 복귀 조치 및 질서 유지</li>
+                <li><strong>통제조(교통담당):</strong> 119 진입로 확보 및 안내</li>
+                <li><strong>관리자조:</strong> 최종 관리자 보고, 전체과정 총괄</li>
+            </ul>
+        </div>
+
+        <div class="d-flex gap-2 mt-4">
+            <button class="btn btn-outline-secondary flex-fill" onclick="move(1)">이전으로</button>
+            <button class="btn btn-dark flex-fill fw-bold" onclick="move(3)">다음: 정보 입력</button>
+        </div>
+    </div>
+
+    <div id="s3" class="step-view">
+        <h6 class="fw-bold mb-3">5. 대상자 정보</h6>
+        <select id="userType" class="form-select mb-2" onchange="toggleUserForm()">
+            <option value="학생">학생 직접 입력</option>
+            <option value="성인">성인(교직원/외부인)</option>
+        </select>
+        <div id="studentForm" class="bg-light p-3 rounded mb-3">
+            <div class="row g-1"><div class="col-4"><input type="text" id="inGrade" class="form-control" placeholder="학년"></div><div class="col-4"><input type="text" id="inClass" class="form-control" placeholder="반"></div><div class="col-4"><input type="text" id="inName" class="form-control" placeholder="이름"></div></div>
+        </div>
+        <div id="adultForm" class="bg-light p-3 rounded mb-3" style="display:none;">
+            <div class="row g-1"><div class="col-6"><input type="text" id="adultInfo" class="form-control" placeholder="소속"></div><div class="col-6"><input type="text" id="adultName" class="form-control" placeholder="성함"></div></div>
+        </div>
+
+        <h6 class="fw-bold mb-2 small">6. 방문/응급 사유 선택</h6>
+        <select id="reason" class="form-select mb-2" onchange="toggleEtcReason()">
+            <option value="">사유 선택</option>
+            <option value="심폐 정지">심폐 정지</option>
+            <option value="의식 상태 이상">의식 상태 이상</option>
+            <option value="아나필락시스">아나필락시스</option>
+            <option value="심한 화상">심한 화상</option>
+            <option value="부식성 화학물질에 노출">부식성 화학물질에 노출</option>
+            <option value="심하거나 가슴 등 주요 부위 통증">심하거나 가슴 등 주요 부위 통증</option>
+            <option value="약물중독/약물과다복용">약물중독/약물과다복용</option>
+            <option value="호흡부전">호흡부전</option>
+            <option value="발작 지속상태(5분이상)또는 첫 발작">발작 지속상태(5분이상)또는 첫 발작</option>
+            <option value="쇼크/지혈 안되는 출혈">쇼크 / 지혈이 되지 않는 출혈</option>
+            <option value="의식소실을 동반한 두부 손상">의식소실을 동반한 두부 손상</option>
+            <option value="심한 부상">심한 부상</option>
+            <option value="폭력행위/자살행동">폭력행위/자살행동</option>
+            <option value="기타">기타 (직접 입력)</option>
+        </select>
+        <div id="etcInputBox" class="mb-4" style="display:none;">
+            <input type="text" id="etcReason" class="form-control border-danger" placeholder="사유를 구체적으로 입력하세요.">
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary flex-fill" onclick="move(2)">이전 단계로</button>
+            <button id="finalBtn" class="btn btn-success flex-fill fw-bold shadow" onclick="finalSave()">기록 저장 및 완료</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ============= 설정: Google Apps Script API URL =============
+    const API_URL = 'YOUR_GOOGLE_APPS_SCRIPT_API_URL_HERE';
+    // ===========================================================
+
+    let curAVPU = "A"; let curGCS = 15; let curSeverity = "경도"; let timeline = [];
+    const recognition = (window.SpeechRecognition || window.webkitSpeechRecognition) ? new (window.SpeechRecognition || window.webkitSpeechRecognition)() : null;
+    let isRecognitionActive = false;
+
+    function move(n) { document.querySelectorAll('.step-view').forEach(v => v.classList.remove('active')); document.getElementById('s' + n).classList.add('active'); window.scrollTo(0,0); }
+    function setAVPU(val) { curAVPU = val; document.querySelectorAll('.btn-avpu').forEach(b => b.classList.remove('active')); document.getElementById('avpu_'+val).classList.add('active'); checkEmergency(); }
+
+    function calcGCS() {
+        const e = parseInt(document.querySelector('input[name="gE"]:checked')?.value || 4);
+        const m = parseInt(document.querySelector('input[name="gM"]:checked')?.value || 6);
+        const v = parseInt(document.querySelector('input[name="gV"]:checked')?.value || 5);
+        curGCS = e + m + v;
+        curSeverity = curGCS >= 13 ? "경도" : (curGCS >= 9 ? "중등도" : "중증");
+        document.getElementById('gcsDisp').innerText = `총점: ${curGCS}점 (${curSeverity})`;
+        checkEmergency();
+    }
+
+    function checkEmergency() {
+        const alertBox = document.getElementById('emergencyNotice');
+        const reasonText = document.getElementById('alertReasonText');
+        let reasons = [];
+
+        if (curAVPU !== 'A') reasons.push("의식 저하");
+        if (curGCS <= 13) reasons.push(`GCS 저하(${curGCS}점)`);
+
+        const sbp = parseInt(document.getElementById('vsSBP').value);
+        if(sbp > 0) {
+            if(sbp < 90) reasons.push(`수축기 혈압 90 미만 (${sbp})`);
+            else if(sbp > 180) reasons.push(`수축기 혈압 180 이상 (${sbp})`);
+        }
+
+        const pr = parseInt(document.getElementById('vsPR').value);
+        if(pr > 0) {
+            if(pr < 50) reasons.push(`맥박 50 미만 (${pr})`);
+            else if(pr > 120) reasons.push(`맥박 120 이상 (${pr})`);
+        }
+
+        const rr = parseInt(document.getElementById('vsRR').value);
+        if(rr > 0) {
+            if(rr < 10) reasons.push(`호흡수 10 미만 (${rr})`);
+            else if(rr > 30) reasons.push(`호흡수 30 이상 (${rr})`);
+        }
+
+        const spo2 = parseInt(document.getElementById('vsSpO2').value);
+        if(spo2 > 0 && spo2 < 92) reasons.push(`SpO2 92% 미만 (${spo2}%)`);
+
+        const bst = parseInt(document.getElementById('vsBST').value);
+        if(bst > 0) {
+            if(bst < 70) reasons.push(`혈당 70 미만 (${bst})`);
+            else if(bst > 300) reasons.push(`혈당 300 이상 (${bst})`);
+        }
+
+        if (reasons.length > 0) {
+            alertBox.style.display = 'block';
+            reasonText.innerHTML = "위험 항목: " + reasons.join(", ");
+        } else {
+            alertBox.style.display = 'none';
+        }
+    }
+
+    function autoRecord(chk, text) { if(chk.checked) addTimeline("[자동기록] " + text); }
+    function addManual() { const inp = document.getElementById('manualInput'); if(inp.value) { addTimeline(inp.value); inp.value = ""; } }
+
+    function addTimeline(text) {
+        const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        timeline.push(`[${time}] ${text}`);
+        const box = document.getElementById('timelineBox');
+        if(box) { box.innerHTML += `<div class="timeline-item">[${time}] ${text}</div>`; box.scrollTop = box.scrollHeight; }
+    }
+
+    // 음성인식 (간단한 원래 방식)
+    function toggleVoice() {
+        if(!recognition) return showToast("음성인식을 지원하지 않는 브라우저입니다.", "error");
+        if(isRecognitionActive) return; // 이미 활성화된 경우 무시
+
+        try {
+            document.getElementById('micBtn').classList.add('recording');
+            document.getElementById('micStatus').innerText = "듣고 있습니다...";
+            isRecognitionActive = true;
+            recognition.start();
+        } catch(err) {
+            console.error('음성인식 시작 오류:', err);
+            stopMic();
+        }
+    }
+
+    if(recognition) {
+        recognition.lang = 'ko-KR';
+        recognition.continuous = false;
+        recognition.interimResults = false;
+
+        recognition.onstart = () => {
+            isRecognitionActive = true;
+        };
+
+        recognition.onresult = (e) => {
+            addTimeline(e.results[0][0].transcript);
+            stopMic();
+        };
+
+        recognition.onend = () => {
+            stopMic();
+        };
+
+        recognition.onerror = (e) => {
+            console.error('음성인식 오류:', e.error);
+            // 'no-speech' 에러는 사용자가 말하지 않은 경우이므로 무시
+            if(e.error !== 'no-speech' && e.error !== 'aborted') {
+                showToast("음성인식 오류: " + e.error, "error");
+            }
+            stopMic();
+        };
+    }
+
+    function stopMic() {
+        document.getElementById('micBtn').classList.remove('recording');
+        document.getElementById('micStatus').innerText = "";
+        isRecognitionActive = false;
+    }
+
+    function toggleUserForm() { const type = document.getElementById('userType').value; document.getElementById('studentForm').style.display = type === '학생' ? 'block' : 'none'; document.getElementById('adultForm').style.display = type === '성인' ? 'block' : 'none'; }
+    function toggleEtcReason() { const sel = document.getElementById('reason').value; document.getElementById('etcInputBox').style.display = (sel === '기타') ? 'block' : 'none'; }
+
+    // API로 데이터 저장
+    async function finalSave() {
+        console.log('[저장 시작]');
+
+        const btn = document.getElementById('finalBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 전송 중...';
+
+        const data = {
+            avpu: curAVPU, gcs: curGCS, severity: curSeverity,
+            vsSBP: document.getElementById('vsSBP').value,
+            vsDBP: document.getElementById('vsDBP').value,
+            vsPR: document.getElementById('vsPR').value,
+            vsRR: document.getElementById('vsRR').value,
+            vsBT: document.getElementById('vsBT').value,
+            vsSpO2: document.getElementById('vsSpO2').value,
+            vsBST: document.getElementById('vsBST').value,
+            bldLoc: document.getElementById('bldLoc').value,
+            bldType: document.getElementById('bldType').value,
+            bldDeg: document.getElementById('bldDeg').value,
+            bldAmt: document.getElementById('bldAmt').value,
+            injOpen: document.getElementById('injOpen').value,
+            injColor: document.getElementById('injColor').value,
+            injJoint: document.getElementById('injJoint').value,
+            injWalk: document.getElementById('injWalk').value,
+            p_provoke: document.getElementById('p_provoke').value,
+            q_quality: document.getElementById('q_quality').value,
+            r_region: document.getElementById('r_region').value,
+            s_severity: document.getElementById('s_severity').value,
+            t_time: document.getElementById('t_time').value,
+            timeline: timeline.join("\n"),
+            userType: document.getElementById('userType').value,
+            info: document.getElementById('userType').value === '학생' ? `${document.getElementById('inGrade').value}-${document.getElementById('inClass').value}` : document.getElementById('adultInfo').value,
+            name: document.getElementById('userType').value === '학생' ? document.getElementById('inName').value : document.getElementById('adultName').value,
+            reason: document.getElementById('reason').value === '기타' ? document.getElementById('etcReason').value : document.getElementById('reason').value
+        };
+
+        console.log('[저장 데이터]', data);
+
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            console.log('[저장 완료]');
+            showToast("저장하였습니다.", "success");
+            setTimeout(() => resetForm(), 1500);
+        } catch(error) {
+            console.error('[저장 실패]', error);
+            showToast("네트워크 오류가 발생했습니다.", "error");
+            btn.disabled = false; btn.innerText = "재시도";
+        }
+    }
+
+    function showToast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast-message ${type}`;
+
+        let icon = '';
+        if (type === 'success') icon = '✓';
+        else if (type === 'error') icon = '✕';
+        else if (type === 'info') icon = 'ℹ';
+
+        toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${message}</span>`;
+        container.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.animation = 'fadeOut 0.3s ease-out';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    function resetForm() {
+        console.log('[폼 초기화 시작]');
+
+        const inputs = document.querySelectorAll('input, select, textarea');
+        inputs.forEach(input => {
+            if (input.type === 'radio' || input.type === 'checkbox') {
+                input.checked = false;
+            } else {
+                input.value = '';
+            }
+        });
+
+        document.querySelector('input[name="gE"][value="4"]').checked = true;
+        document.querySelector('input[name="gM"][value="6"]').checked = true;
+        document.querySelector('input[name="gV"][value="5"]').checked = true;
+
+        timeline = [];
+        document.getElementById('timelineBox').innerHTML = '';
+        curAVPU = "A";
+        curGCS = 15;
+        curSeverity = "경도";
+        setAVPU('A');
+        calcGCS();
+
+        const btn = document.getElementById('finalBtn');
+        btn.disabled = false;
+        btn.innerText = "기록 저장 및 완료";
+
+        move(1);
+        window.scrollTo(0,0);
+        console.log('[폼 초기화 완료]');
+    }
+</script>
+</body>
+</html>
